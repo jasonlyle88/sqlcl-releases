@@ -31,7 +31,7 @@ jobs:
       - name: Check for existing release
         id: existing
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.discover.outputs.version }}
         run: |
           if gh release view "$VERSION" >/dev/null 2>&1; then
@@ -43,7 +43,7 @@ jobs:
       - name: Create checksum-only release
         if: steps.existing.outputs.exists != 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.discover.outputs.version }}
         run: |
           gh release create "v$VERSION" \
