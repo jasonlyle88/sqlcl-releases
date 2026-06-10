@@ -32,6 +32,8 @@ def main() -> int:
     failures = []
     for release in releases:
         tag = release["tag_name"]
+        # mise strips a leading "v" from tags, but Oracle download URLs do not
+        # use it. Support both tag styles in case the repo changes convention.
         version = tag[1:] if tag.startswith("v") else tag
         url = VERSION_URL_TEMPLATE.format(version=version)
         ok, detail = oracle_url_exists(url)
@@ -58,6 +60,8 @@ def list_releases(repository: str, token: str | None) -> list[dict]:
     releases = []
     page = 1
     while True:
+        # GitHub caps release listing at 100 items per page, so keep paging
+        # until the API returns an empty page.
         url = f"https://api.github.com/repos/{repository}/releases?per_page=100&page={page}"
         headers = {"Accept": "application/vnd.github+json"}
         if token:
@@ -72,6 +76,7 @@ def list_releases(repository: str, token: str | None) -> list[dict]:
 
 def oracle_url_exists(url: str) -> tuple[bool, str]:
     try:
+        # HEAD is cheap and normally enough for Oracle's static downloads.
         with urllib.request.urlopen(request(url, method="HEAD"), timeout=30) as response:
             return 200 <= response.status < 400, f"HTTP {response.status}"
     except urllib.error.HTTPError as error:
@@ -81,6 +86,8 @@ def oracle_url_exists(url: str) -> tuple[bool, str]:
         return False, str(error.reason)
 
     try:
+        # Some CDNs reject HEAD. A one-byte range request confirms availability
+        # without downloading a full SQLcl archive.
         headers = {"Range": "bytes=0-0", "User-Agent": USER_AGENT}
         with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
             return 200 <= response.status < 400, f"HTTP {response.status}"
@@ -105,4 +112,3 @@ def render_report(rows: list[tuple[str, str, str, str]]) -> str:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

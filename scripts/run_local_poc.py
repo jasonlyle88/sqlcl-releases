@@ -30,8 +30,12 @@ def main() -> int:
     args.work_dir.mkdir(parents=True, exist_ok=True)
     archive_name = f"sqlcl-{version}.zip"
     checksum_name = f"{archive_name}.sha256"
+    # The POC serves only the checksum file locally. The SQLcl zip still comes
+    # directly from Oracle, matching the real registry behavior.
     (args.work_dir / checksum_name).write_text(f"{sha256}  {archive_name}\n", encoding="utf-8")
 
+    # Use an ephemeral localhost port so the helper does not conflict with
+    # anything already running on the machine.
     server = ThreadingHTTPServer(
         ("127.0.0.1", 0),
         partial(SimpleHTTPRequestHandler, directory=str(args.work_dir)),
@@ -40,6 +44,8 @@ def main() -> int:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
+    # This temporary registry mirrors the production package entry but points
+    # checksum lookup at the local HTTP server.
     registry = args.work_dir / "registry.yaml"
     registry.write_text(
         f"""# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
@@ -63,6 +69,7 @@ packages:
     )
 
     env = os.environ.copy()
+    # Keep mise cache/config/data isolated from the user's normal environment.
     env.update(
         {
             "MISE_AQUA_REGISTRIES": f"file://{args.work_dir.resolve()}",
@@ -94,4 +101,3 @@ def resolve_metadata_path(path: Path) -> Path:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

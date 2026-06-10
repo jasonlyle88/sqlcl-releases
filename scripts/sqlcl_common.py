@@ -16,6 +16,7 @@ import zipfile
 LATEST_URL = "https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-latest.zip"
 DOWNLOAD_PAGE_URL = "https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/download/"
 VERSION_URL_TEMPLATE = "https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-{version}.zip"
+# Oracle pages are more likely to serve full HTML reliably with a descriptive user agent.
 USER_AGENT = "sqlcl-aqua-registry/1.0 (+https://github.com/jlyle/sqlcl-aqua-registry)"
 
 
@@ -80,6 +81,8 @@ def hash_file(path: Path, algorithm: str) -> str:
 
 def parse_download_page(page_html: str, expected_url: str | None = None) -> PublishedDownload:
     normalized = html.unescape(page_html)
+    # Backfill pages can contain several Oracle download links. The requested
+    # download URL lets us ignore unrelated "latest" or previous-version links.
     expected_version = _version_from_download_url(expected_url) if expected_url else None
 
     for match in _download_link_matches(normalized):
@@ -88,6 +91,9 @@ def parse_download_page(page_html: str, expected_url: str | None = None) -> Publ
         if expected_version and version != expected_version:
             continue
 
+        # Checksums usually live in the same table row or nearby details block,
+        # but Oracle has changed the page template several times. A surrounding
+        # window handles both the table layout and older single-line HTML.
         chunk = normalized[max(0, match.start() - 2500) : match.end() + 2500]
         md5, sha1, sha256 = _checksums_from_chunk(chunk)
         release_date = _release_date_from_chunk(chunk)
@@ -102,6 +108,9 @@ def parse_download_page(page_html: str, expected_url: str | None = None) -> Publ
             )
 
     if expected_url and expected_version:
+        # Some archived pages do not expose a clean versioned href near the
+        # checksum block. In that case, trust the caller-provided URL for the
+        # version and still require at least one checksum from the page.
         md5, sha1, sha256 = _checksums_from_chunk(normalized)
         if md5 or sha1 or sha256:
             return PublishedDownload(
@@ -119,6 +128,7 @@ def parse_download_page(page_html: str, expected_url: str | None = None) -> Publ
 def extract_version_from_zip(zip_path: Path) -> str:
     with zipfile.ZipFile(zip_path) as archive:
         try:
+            # Modern SQLcl archives include the build version here.
             version_text = archive.read("sqlcl/bin/version.txt").decode("utf-8", errors="replace")
         except KeyError:
             version_text = ""
@@ -127,6 +137,8 @@ def extract_version_from_zip(zip_path: Path) -> str:
         if release:
             return release
 
+        # Older/current archives also include a version-named marker file at
+        # the top of the sqlcl directory. Use it only when unambiguous.
         version_files = []
         for name in archive.namelist():
             match = re.fullmatch(r"sqlcl/([0-9]+(?:\.[0-9]+)+)", name)
@@ -139,10 +151,13 @@ def extract_version_from_zip(zip_path: Path) -> str:
 
 
 def verify_published_checksums(zip_path: Path, published: PublishedDownload, asset_url: str, page_url: str) -> ReleaseMetadata:
+    # We always calculate all three hashes for release assets, even when Oracle
+    # only publishes one or two of them for a historical version.
     md5 = hash_file(zip_path, "md5")
     sha1 = hash_file(zip_path, "sha1")
     sha256 = hash_file(zip_path, "sha256")
 
+    # Only compare algorithms Oracle actually published on the release page.
     mismatches = []
     if published.md5 and published.md5 != md5:
         mismatches.append(f"MD5 expected {published.md5}, got {md5}")
@@ -173,6 +188,8 @@ def verify_published_checksums(zip_path: Path, published: PublishedDownload, ass
 def write_checksum_files(output_dir: Path, metadata: ReleaseMetadata) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     archive_name = f"sqlcl-{metadata.version}.zip"
+    # Individual files are convenient for aqua checksum config; the combined
+    # file is a human-friendly release artifact.
     files = {
         f"{archive_name}.md5": metadata.md5,
         f"{archive_name}.sha1": metadata.sha1,
@@ -236,6 +253,7 @@ def write_metadata(output_dir: Path, metadata: ReleaseMetadata) -> Path:
     path = output_dir / f"sqlcl-{metadata.version}.metadata.json"
     metadata_json = metadata.to_json()
     path.write_text(metadata_json, encoding="utf-8")
+    # Keep an unversioned alias for local POC scripts and manual inspection.
     (output_dir / "metadata.json").write_text(metadata_json, encoding="utf-8")
     return path
 
@@ -271,6 +289,9 @@ def _first_group(pattern: str, text: str, flags: int = 0) -> str | None:
 
 def _checksums_from_chunk(chunk: str) -> tuple[str | None, str | None, str | None]:
     md5 = sha1 = sha256 = None
+    # Archived Oracle pages have a few label inconsistencies, including
+    # "SHA1: md<hash>" and a 40-character digest labeled as SHA256. Classifying
+    # by digest length is more reliable than trusting the visible label.
     checksum_re = re.compile(
         r"\b(?:MD5|SHA[-\s]?(?:1|256))\s*:?\s*(?:md)?([A-Fa-f0-9]{32,64})",
         re.IGNORECASE,
@@ -287,6 +308,8 @@ def _checksums_from_chunk(chunk: str) -> tuple[str | None, str | None, str | Non
 
 
 def _download_link_matches(page_html: str) -> Iterable[re.Match[str]]:
+    # Older pages may use protocol-relative hrefs with whitespace, e.g.
+    # href=' //download.oracle.com/.../sqlcl-21.1.1.113.1704.zip'.
     link_re = re.compile(
         r"""href\s*=\s*["']\s*(?P<url>(?:https?:)?\s*//download\.oracle\.com/[^"']*?/sqlcl-(?P<version>\d+(?:\.\d+)+)\.zip)\s*["']""",
         re.IGNORECASE,
@@ -295,6 +318,7 @@ def _download_link_matches(page_html: str) -> Iterable[re.Match[str]]:
 
 
 def _normalize_oracle_url(url: str) -> str:
+    # Normalize href variants into the canonical HTTPS form used in metadata.
     normalized = re.sub(r"\s+", "", url.strip())
     if normalized.startswith("//"):
         return f"https:{normalized}"
@@ -306,6 +330,8 @@ def _normalize_oracle_url(url: str) -> str:
 def _version_from_download_url(url: str | None) -> str | None:
     if not url:
         return None
+    # sqlcl-latest.zip intentionally has no parseable version; callers can
+    # still discover the version from the page/archive in that case.
     normalized = _normalize_oracle_url(url)
     parsed = urllib.parse.urlparse(normalized)
     match = re.search(r"sqlcl-(\d+(?:\.\d+)+)\.zip$", parsed.path)
@@ -317,6 +343,7 @@ def _release_date_from_chunk(chunk: str) -> str | None:
     if release_date:
         return release_date.strip()
 
+    # Older pages render release dates as "Version x.y.z - Month D, YYYY".
     version_date = _first_group(
         r"Version\s+\d+(?:\.\d+)+\s*-\s*([^<\n\r]+)",
         chunk,

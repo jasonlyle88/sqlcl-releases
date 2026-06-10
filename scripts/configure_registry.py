@@ -14,6 +14,8 @@ def main() -> int:
     args = parser.parse_args()
 
     text = args.registry.read_text(encoding="utf-8")
+    # The registry contains a single package entry, so only the first owner/repo
+    # pair should be rewritten.
     text = re.sub(r"(\n\s*repo_owner:\s*)\S+", rf"\g<1>{args.owner}", text, count=1)
     text = re.sub(r"(\n\s*repo_name:\s*)\S+", rf"\g<1>{args.repo}", text, count=1)
     text = text.replace("github.com/jlyle/sqlcl-aqua-registry", f"github.com/{args.owner}/{args.repo}")
@@ -24,4 +26,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

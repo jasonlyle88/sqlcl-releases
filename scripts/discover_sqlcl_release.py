@@ -36,6 +36,8 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="sqlcl-release-") as tmp:
         temp_dir = Path(tmp)
+        # Keep the downloaded zip out of release artifacts; only checksums and
+        # metadata are written to --output-dir.
         zip_path = temp_dir / "sqlcl-latest.zip"
         if args.zip_path:
             shutil.copyfile(args.zip_path, zip_path)
@@ -44,9 +46,13 @@ def main() -> int:
             download_file(args.download_link, zip_path)
 
         print(f"Fetching {args.release_page}", file=sys.stderr)
+        # Passing the download URL prevents backfills from accidentally picking
+        # up a "latest" or previous-version link on Oracle's archived pages.
         published = parse_download_page(fetch_text(args.release_page), expected_url=args.download_link)
         archive_version = extract_version_from_zip(zip_path)
 
+        # The archive is the source of truth for the installed version. The page
+        # must agree before we trust its checksums.
         if archive_version != published.version:
             raise RuntimeError(
                 "Downloaded archive version does not match Oracle download page: "
@@ -60,6 +66,7 @@ def main() -> int:
         write_env_file(args.output_dir, metadata)
 
         if args.github_output:
+            # GitHub Actions reads this file to drive release creation steps.
             append_github_output(
                 args.github_output,
                 [
