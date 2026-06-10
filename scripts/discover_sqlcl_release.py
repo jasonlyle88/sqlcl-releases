@@ -44,7 +44,7 @@ def main() -> int:
             download_file(args.download_link, zip_path)
 
         print(f"Fetching {args.release_page}", file=sys.stderr)
-        published = parse_download_page(fetch_text(args.release_page))
+        published = parse_download_page(fetch_text(args.release_page), expected_url=args.download_link)
         archive_version = extract_version_from_zip(zip_path)
 
         if archive_version != published.version:

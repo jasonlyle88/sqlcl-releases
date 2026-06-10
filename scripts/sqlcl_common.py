@@ -10,6 +10,7 @@ import json
 import re
 import urllib.error
 import urllib.request
+import urllib.parse
 import zipfile
 
 LATEST_URL = "https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-latest.zip"
@@ -77,27 +78,39 @@ def hash_file(path: Path, algorithm: str) -> str:
     return digest.hexdigest()
 
 
-def parse_download_page(page_html: str) -> PublishedDownload:
+def parse_download_page(page_html: str, expected_url: str | None = None) -> PublishedDownload:
     normalized = html.unescape(page_html)
-    link_re = re.compile(
-        r'href=["\'](?P<url>https://download\.oracle\.com/[^"\']*/sqlcl-(?P<version>\d+(?:\.\d+)+)\.zip)["\']',
-        re.IGNORECASE,
-    )
+    expected_version = _version_from_download_url(expected_url) if expected_url else None
 
-    for match in link_re.finditer(normalized):
-        chunk = normalized[match.start() : match.start() + 2500]
-        md5 = _first_group(r"MD5:\s*([A-Fa-f0-9]{32})", chunk)
-        sha1 = _first_group(r"SHA1:\s*([A-Fa-f0-9]{40})", chunk)
-        sha256 = _first_group(r"SHA(?:-)?256:\s*([A-Fa-f0-9]{64})", chunk)
-        release_date = _first_group(r"Release Date:\s*([0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4})", chunk)
+    for match in _download_link_matches(normalized):
+        url = _normalize_oracle_url(match.group("url"))
+        version = match.group("version")
+        if expected_version and version != expected_version:
+            continue
+
+        chunk = normalized[max(0, match.start() - 2500) : match.end() + 2500]
+        md5, sha1, sha256 = _checksums_from_chunk(chunk)
+        release_date = _release_date_from_chunk(chunk)
         if md5 or sha1 or sha256:
             return PublishedDownload(
-                version=match.group("version"),
-                url=match.group("url"),
+                version=version,
+                url=url,
                 md5=md5.lower() if md5 else None,
                 sha1=sha1.lower() if sha1 else None,
                 sha256=sha256.lower() if sha256 else None,
                 release_date=release_date,
+            )
+
+    if expected_url and expected_version:
+        md5, sha1, sha256 = _checksums_from_chunk(normalized)
+        if md5 or sha1 or sha256:
+            return PublishedDownload(
+                version=expected_version,
+                url=_normalize_oracle_url(expected_url),
+                md5=md5.lower() if md5 else None,
+                sha1=sha1.lower() if sha1 else None,
+                sha256=sha256.lower() if sha256 else None,
+                release_date=_release_date_from_chunk(normalized),
             )
 
     raise RuntimeError("Could not find a SQLcl download row with published checksums on Oracle's page")
@@ -254,3 +267,61 @@ def append_github_output(path: Path, pairs: Iterable[tuple[str, str]]) -> None:
 def _first_group(pattern: str, text: str, flags: int = 0) -> str | None:
     match = re.search(pattern, text, flags)
     return match.group(1) if match else None
+
+
+def _checksums_from_chunk(chunk: str) -> tuple[str | None, str | None, str | None]:
+    md5 = sha1 = sha256 = None
+    checksum_re = re.compile(
+        r"\b(?:MD5|SHA[-\s]?(?:1|256))\s*:?\s*(?:md)?([A-Fa-f0-9]{32,64})",
+        re.IGNORECASE,
+    )
+    for match in checksum_re.finditer(chunk):
+        checksum = match.group(1).lower()
+        if len(checksum) == 32:
+            md5 = checksum
+        elif len(checksum) == 40:
+            sha1 = checksum
+        elif len(checksum) == 64:
+            sha256 = checksum
+    return md5, sha1, sha256
+
+
+def _download_link_matches(page_html: str) -> Iterable[re.Match[str]]:
+    link_re = re.compile(
+        r"""href\s*=\s*["']\s*(?P<url>(?:https?:)?\s*//download\.oracle\.com/[^"']*?/sqlcl-(?P<version>\d+(?:\.\d+)+)\.zip)\s*["']""",
+        re.IGNORECASE,
+    )
+    return link_re.finditer(page_html)
+
+
+def _normalize_oracle_url(url: str) -> str:
+    normalized = re.sub(r"\s+", "", url.strip())
+    if normalized.startswith("//"):
+        return f"https:{normalized}"
+    if normalized.startswith("http://"):
+        return "https://" + normalized[len("http://") :]
+    return normalized
+
+
+def _version_from_download_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    normalized = _normalize_oracle_url(url)
+    parsed = urllib.parse.urlparse(normalized)
+    match = re.search(r"sqlcl-(\d+(?:\.\d+)+)\.zip$", parsed.path)
+    return match.group(1) if match else None
+
+
+def _release_date_from_chunk(chunk: str) -> str | None:
+    release_date = _first_group(r"Release Date:\s*([0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4})", chunk)
+    if release_date:
+        return release_date.strip()
+
+    version_date = _first_group(
+        r"Version\s+\d+(?:\.\d+)+\s*-\s*([^<\n\r]+)",
+        chunk,
+        flags=re.IGNORECASE,
+    )
+    if version_date:
+        return re.sub(r"\s+", " ", version_date).strip()
+    return None
