@@ -28,6 +28,8 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, default=Path("dist"), help="Directory for generated release assets.")
     parser.add_argument("--zip-path", type=Path, help="Use an existing sqlcl-latest.zip instead of downloading it.")
     parser.add_argument("--github-output", type=Path, help="Append version outputs for GitHub Actions.")
+    parser.add_argument("--download-link", type=str, default=LATEST_URL, help="URL to download SQLcl release zip.")
+    parser.add_argument("--release-page", type=str, default=DOWNLOAD_PAGE_URL, help="URL to SQLcl version release page.")
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -38,11 +40,11 @@ def main() -> int:
         if args.zip_path:
             shutil.copyfile(args.zip_path, zip_path)
         else:
-            print(f"Downloading {LATEST_URL}", file=sys.stderr)
-            download_file(LATEST_URL, zip_path)
+            print(f"Downloading {args.download_link}", file=sys.stderr)
+            download_file(args.download_link, zip_path)
 
-        print(f"Fetching {DOWNLOAD_PAGE_URL}", file=sys.stderr)
-        published = parse_download_page(fetch_text(DOWNLOAD_PAGE_URL))
+        print(f"Fetching {args.release_page}", file=sys.stderr)
+        published = parse_download_page(fetch_text(args.release_page))
         archive_version = extract_version_from_zip(zip_path)
 
         if archive_version != published.version:
@@ -51,7 +53,7 @@ def main() -> int:
                 f"archive={archive_version}, page={published.version}"
             )
 
-        metadata = verify_published_checksums(zip_path, published)
+        metadata = verify_published_checksums(zip_path, published, args.download_link, args.release_page)
         write_checksum_files(args.output_dir, metadata)
         write_release_notes(args.output_dir, metadata)
         write_metadata(args.output_dir, metadata)

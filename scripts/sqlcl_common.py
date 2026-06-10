@@ -32,8 +32,8 @@ class PublishedDownload:
 class ReleaseMetadata:
     version: str
     oracle_url: str
-    oracle_latest_url: str
-    oracle_page_url: str
+    oracle_release_asset_url: str
+    oracle_release_page_url: str
     release_date: str | None
     md5: str
     sha1: str
@@ -125,7 +125,7 @@ def extract_version_from_zip(zip_path: Path) -> str:
     raise RuntimeError(f"Could not determine SQLcl version from {zip_path}")
 
 
-def verify_published_checksums(zip_path: Path, published: PublishedDownload) -> ReleaseMetadata:
+def verify_published_checksums(zip_path: Path, published: PublishedDownload, asset_url: str, page_url: str) -> ReleaseMetadata:
     md5 = hash_file(zip_path, "md5")
     sha1 = hash_file(zip_path, "sha1")
     sha256 = hash_file(zip_path, "sha256")
@@ -145,8 +145,8 @@ def verify_published_checksums(zip_path: Path, published: PublishedDownload) -> 
     return ReleaseMetadata(
         version=published.version,
         oracle_url=published.url,
-        oracle_latest_url=LATEST_URL,
-        oracle_page_url=DOWNLOAD_PAGE_URL,
+        oracle_release_asset_url=asset_url,
+        oracle_release_page_url=page_url,
         release_date=published.release_date,
         md5=md5,
         sha1=sha1,
@@ -192,12 +192,12 @@ def write_release_notes(output_dir: Path, metadata: ReleaseMetadata) -> Path:
     lines = [
         f"# SQLcl {metadata.version}",
         "",
-        "This is a metadata-only release for aqua/mise version discovery and checksum verification.",
-        "The SQLcl zip archive is not mirrored here; installs download it directly from Oracle.",
+        "This is a metadata-only release for version discovery and checksum verification.",
+        "The SQLcl zip archive is not mirrored here.",
+        "Installs need to be downloaded directly from Oracle.",
         "",
         f"- Oracle versioned download: {metadata.oracle_url}",
-        f"- Oracle latest permalink checked: {metadata.oracle_latest_url}",
-        f"- Oracle download page checked: {metadata.oracle_page_url}",
+        f"- Oracle download page checked: {metadata.oracle_release_page_url}",
     ]
     if metadata.release_date:
         lines.append(f"- Oracle release date: {metadata.release_date}")
