@@ -1,0 +1,35 @@
+name: Health Check Oracle URLs
+
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: health-check-oracle-urls
+  cancel-in-progress: false
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Check Oracle release URLs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >
+          python3 scripts/check_oracle_release_urls.py
+          --repository "${{ github.repository }}"
+          --github-token "$GITHUB_TOKEN"
+          --github-summary "$GITHUB_STEP_SUMMARY"
+

@@ -1,0 +1,60 @@
+name: Publish SQLcl Release
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-sqlcl-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Discover current SQLcl release
+        id: discover
+        run: python3 scripts/discover_sqlcl_release.py --output-dir dist --github-output "$GITHUB_OUTPUT"
+
+      - name: Check for existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.discover.outputs.version }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create checksum-only release
+        if: steps.existing.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.discover.outputs.version }}
+        run: |
+          gh release create "$VERSION" \
+            "dist/sqlcl-$VERSION.zip.md5" \
+            "dist/sqlcl-$VERSION.zip.sha1" \
+            "dist/sqlcl-$VERSION.zip.sha256" \
+            "dist/sqlcl-$VERSION.checksums.txt" \
+            "dist/sqlcl-$VERSION.metadata.json" \
+            --title "SQLcl $VERSION" \
+            --notes-file dist/release-notes.md
+
+      - name: Report existing release
+        if: steps.existing.outputs.exists == 'true'
+        run: echo "SQLcl ${{ steps.discover.outputs.version }} already exists."

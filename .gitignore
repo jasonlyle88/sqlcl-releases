@@ -1,0 +1,7 @@
+dist/
+work/
+temp/
+.mise.toml
+.mise.local.toml
+__pycache__/
+*.pyc
