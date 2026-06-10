@@ -46,7 +46,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.discover.outputs.version }}
         run: |
-          gh release create "$VERSION" \
+          gh release create "v$VERSION" \
             "dist/sqlcl-$VERSION.zip.md5" \
             "dist/sqlcl-$VERSION.zip.sha1" \
             "dist/sqlcl-$VERSION.zip.sha256" \
