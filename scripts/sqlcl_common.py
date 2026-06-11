@@ -26,7 +26,11 @@ DATE_SEARCH_SETTINGS = {
     "STRICT_PARSING": True,
 }
 VERSION_RE = re.compile(r"\b(?:\d+\.){4}\d+\b")
-DOWNLOAD_VERSION_RE = re.compile(r"sqlcl-(\d+(?:\.\d+)+)\.zip$")
+DOWNLOAD_VERSION_RE = re.compile(r"\bsqlcl-(\d+(?:\.\d+)+)\.zip\b")
+MD5_RE = re.compile(r"\b[A-Fa-f0-9]{32}\b")
+SHA1_RE = re.compile(r"\b[A-Fa-f0-9]{40}\b")
+SHA256_RE = re.compile(r"\b[A-Fa-f0-9]{64}\b")
+ZIP_LINK_RE = re.compile(r"\d\.zip\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -88,28 +92,30 @@ def hash_file(path: Path, algorithm: str) -> str:
     return digest.hexdigest()
 
 
-def parse_download_page(page_html: str, expected_url: str | None = None) -> PublishedDownload:
+def parse_download_page(page_html: str, page_url: str) -> PublishedDownload:
     soup = BeautifulSoup(page_html, "html.parser")
     page_text = _page_text(soup)
 
-    # Backfill pages can contain several Oracle download links. The requested
-    # download URL lets us ignore unrelated "latest" or previous-version links.
-    expected_version = _version_from_download_url(expected_url) if expected_url else None
-    url = _download_url_from_page(soup, expected_version)
-    version = expected_version or _version_from_download_url(url) or _first_group(VERSION_RE, page_text)
-    md5, sha1, sha256 = _checksums_from_text(page_text)
+    version = _version_from_page(page_text)
+    url = _url_from_page(soup, page_url) or _url_from_version(version)
+    md5 = _md5_from_page(page_text)
+    sha1 = _sha1_from_page(page_text)
+    sha256 = _sha256_from_page(page_text)
+    release_date = _release_date_from_page(page_text)
 
-    if version and (url or expected_url) and (md5 or sha1 or sha256):
-        return PublishedDownload(
-            version=version,
-            url=url or _normalize_oracle_url(expected_url),
-            md5=md5,
-            sha1=sha1,
-            sha256=sha256,
-            release_date=_release_date_from_text(page_text),
-        )
+    if not version:
+        raise RuntimeError("Could not find a SQLcl version on the Oracle download page")
+    if not url:
+        raise RuntimeError("Could not find a SQLcl download URL on the Oracle download page")
 
-    raise RuntimeError("Could not find a SQLcl download row with published checksums on Oracle's page")
+    return PublishedDownload(
+        version=version,
+        url=url,
+        md5=md5,
+        sha1=sha1,
+        sha256=sha256,
+        release_date=release_date,
+    )
 
 
 def extract_version_from_zip(zip_path: Path) -> str:
@@ -271,7 +277,9 @@ def append_github_output(path: Path, pairs: Iterable[tuple[str, str]]) -> None:
 
 def _first_group(pattern: str | re.Pattern[str], text: str, flags: int = 0) -> str | None:
     match = re.search(pattern, text, flags) if isinstance(pattern, str) else pattern.search(text)
-    return match.group(1) if match else None
+    if not match:
+        return None
+    return match.group(1) if match.lastindex else match.group(0)
 
 
 def _page_text(soup: BeautifulSoup) -> str:
@@ -279,66 +287,44 @@ def _page_text(soup: BeautifulSoup) -> str:
     return source.get_text(separator=" ", strip=True)
 
 
-def _checksums_from_text(text: str) -> tuple[str | None, str | None, str | None]:
-    md5 = sha1 = sha256 = None
-    # Archived Oracle pages have a few label inconsistencies, including
-    # "SHA1: md<hash>" and a 40-character digest labeled as SHA256. Classifying
-    # by digest length is more reliable than trusting the visible label.
-    checksum_re = re.compile(
-        r"\b(?:MD5|SHA[-\s]?(?:1|256))\s*:?\s*(?:md)?([A-Fa-f0-9]{32,64})",
-        re.IGNORECASE,
-    )
-    for match in checksum_re.finditer(text):
-        checksum = match.group(1).lower()
-        if len(checksum) == 32:
-            md5 = checksum
-        elif len(checksum) == 40:
-            sha1 = checksum
-        elif len(checksum) == 64:
-            sha256 = checksum
-    return md5, sha1, sha256
+def _version_from_page(text: str) -> str | None:
+    return _first_group(VERSION_RE, text)
 
 
-def _download_url_from_page(soup: BeautifulSoup, expected_version: str | None) -> str | None:
-    # Older pages may use protocol-relative hrefs with whitespace, e.g.
-    # href=' //download.oracle.com/.../sqlcl-21.1.1.113.1704.zip'.
-    for link in soup.find_all("a", href=True):
-        url = _normalize_oracle_url(link["href"])
-        version = _version_from_download_url(url)
-        if not version:
-            continue
-        if not expected_version or version == expected_version:
-            return url
-    return None
-
-
-def _normalize_oracle_url(url: str) -> str:
-    # Normalize href variants into the canonical HTTPS form used in metadata.
-    normalized = re.sub(r"\s+", "", url.strip())
-    if normalized.startswith("//"):
-        return f"https:{normalized}"
-    if normalized.startswith("http://"):
-        return "https://" + normalized[len("http://") :]
-    return normalized
-
-
-def _version_from_download_url(url: str | None) -> str | None:
-    if not url:
+def _url_from_page(soup_context: BeautifulSoup, page_url: str) -> str | None:
+    soup = soup_context.body or soup_context
+    link = soup.find("a", href=ZIP_LINK_RE)
+    if link is None:
         return None
-    # sqlcl-latest.zip intentionally has no parseable version; callers can
-    # still discover the version from the page/archive in that case.
-    normalized = _normalize_oracle_url(url)
-    parsed = urllib.parse.urlparse(normalized)
-    if parsed.netloc and parsed.netloc != "download.oracle.com":
-        return None
-    match = DOWNLOAD_VERSION_RE.search(parsed.path)
-    return match.group(1) if match else None
+    href = str(link.attrs["href"]).strip()
+    url = urllib.parse.urljoin(page_url, href)
+
+    return url
 
 
-def _release_date_from_text(text: str) -> str | None:
-    # dateparser handles the current numeric date format and older
-    # "Month D, YYYY" release text without locking us to either template.
+def _url_from_version(version_string: str) -> str:
+    return VERSION_URL_TEMPLATE.format(version=version_string)
+
+
+def _md5_from_page(text: str) -> str | None:
+    checksum = _first_group(MD5_RE, text)
+    return checksum.lower() if checksum else None
+
+
+def _sha1_from_page(text: str) -> str | None:
+    checksum = _first_group(SHA1_RE, text)
+    return checksum.lower() if checksum else None
+
+
+def _sha256_from_page(text: str) -> str | None:
+    checksum = _first_group(SHA256_RE, text)
+    return checksum.lower() if checksum else None
+
+
+def _release_date_from_page(text: str) -> str | None:
+    # dateparser handles Oracle's historical date formats, so this code does
+    # not need per-page layout branches.
     dates = search_dates(text, settings=DATE_SEARCH_SETTINGS)
     if dates:
-        return re.sub(r"\s+", " ", dates[0][0]).strip()
+        return dates[0][1].date().isoformat()
     return None

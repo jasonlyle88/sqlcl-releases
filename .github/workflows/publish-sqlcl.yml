@@ -5,10 +5,6 @@ on:
     - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
-      download-link:
-        description: "Oracle SQLcl zip URL"
-        required: true
-        default: "https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-latest.zip"
       release-page:
         description: "Oracle SQLcl release/download page"
         required: true
@@ -42,7 +38,6 @@ jobs:
           python3 scripts/discover_sqlcl_release.py \
             --output-dir dist \
             --github-output "$GITHUB_OUTPUT" \
-            --download-link "${{ inputs.download-link }}" \
             --release-page "${{ inputs.release-page }}"
 
       - name: Check for existing release

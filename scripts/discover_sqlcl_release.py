@@ -3,13 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import argparse
-import shutil
 import sys
 import tempfile
 
 from sqlcl_common import (
     DOWNLOAD_PAGE_URL,
-    LATEST_URL,
     append_github_output,
     download_file,
     extract_version_from_zip,
@@ -26,40 +24,35 @@ from sqlcl_common import (
 def main() -> int:
     parser = argparse.ArgumentParser(description="Discover and validate the current Oracle SQLcl release.")
     parser.add_argument("--output-dir", type=Path, default=Path("dist"), help="Directory for generated release assets.")
-    parser.add_argument("--zip-path", type=Path, help="Use an existing sqlcl-latest.zip instead of downloading it.")
     parser.add_argument("--github-output", type=Path, help="Append version outputs for GitHub Actions.")
-    parser.add_argument("--download-link", type=str, default=LATEST_URL, help="URL to download SQLcl release zip.")
     parser.add_argument("--release-page", type=str, default=DOWNLOAD_PAGE_URL, help="URL to SQLcl version release page.")
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
+    print(f"Fetching {args.release_page}", file=sys.stderr)
+    published = parse_download_page(fetch_text(args.release_page), page_url=args.release_page)
+
     with tempfile.TemporaryDirectory(prefix="sqlcl-release-") as tmp:
         temp_dir = Path(tmp)
         # Keep the downloaded zip out of release artifacts; only checksums and
         # metadata are written to --output-dir.
-        zip_path = temp_dir / "sqlcl-latest.zip"
-        if args.zip_path:
-            shutil.copyfile(args.zip_path, zip_path)
-        else:
-            print(f"Downloading {args.download_link}", file=sys.stderr)
-            download_file(args.download_link, zip_path)
+        zip_path = temp_dir / "sqlcl.zip"
+        print(f"Downloading {published.url}", file=sys.stderr)
+        download_file(published.url, zip_path)
 
-        print(f"Fetching {args.release_page}", file=sys.stderr)
-        # Passing the download URL prevents backfills from accidentally picking
-        # up a "latest" or previous-version link on Oracle's archived pages.
-        published = parse_download_page(fetch_text(args.release_page), expected_url=args.download_link)
         archive_version = extract_version_from_zip(zip_path)
 
         # The archive is the source of truth for the installed version. The page
         # must agree before we trust its checksums.
-        if archive_version != published.version:
+        # Some archive versions contain the short version, so check against that as well
+        if archive_version != published.version and not published.version.startswith(archive_version + '.'):
             raise RuntimeError(
                 "Downloaded archive version does not match Oracle download page: "
                 f"archive={archive_version}, page={published.version}"
             )
 
-        metadata = verify_published_checksums(zip_path, published, args.download_link, args.release_page)
+        metadata = verify_published_checksums(zip_path, published, published.url, args.release_page)
         write_checksum_files(args.output_dir, metadata)
         write_release_notes(args.output_dir, metadata)
         write_metadata(args.output_dir, metadata)
