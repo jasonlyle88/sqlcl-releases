@@ -12,11 +12,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from sqlcl_common import USER_AGENT, VERSION_URL_TEMPLATE, request
+from sqlcl_common import USER_AGENT, request
 
 
 def main() -> int:
-    """Check every non-draft GitHub release tag against Oracle's download URL."""
+    """Check every non-draft GitHub release against its metadata URL."""
 
     parser = argparse.ArgumentParser(description="Check whether Oracle still serves each indexed SQLcl release.")
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY"), help="GitHub repository slug.")
@@ -32,18 +32,25 @@ def main() -> int:
         print("No releases found.")
         return 0
 
+    # rows: (release tag, metadata version, Oracle URL, status, detail)
     rows = []
+    # failures: (release tag, metadata version, Oracle URL, failure detail)
     failures = []
     for release in releases:
         tag = release["tag_name"]
-        # mise strips a leading "v" from tags, but Oracle download URLs do not
-        # use it. Support both tag styles in case the repo changes convention.
-        version = tag[1:] if tag.startswith("v") else tag
-        url = VERSION_URL_TEMPLATE.format(version=version)
+        try:
+            metadata = fetch_release_metadata(release, args.github_token)
+            version = metadata["version"]
+            url = metadata["oracle_release_asset_url"]
+        except (KeyError, RuntimeError, ValueError) as error:
+            rows.append((tag, "", "", "metadata-error", str(error)))
+            failures.append((tag, "", "", str(error)))
+            continue
+
         ok, detail = oracle_url_exists(url)
-        rows.append((tag, url, "ok" if ok else "unavailable", detail))
+        rows.append((tag, version, url, "ok" if ok else "unavailable", detail))
         if not ok:
-            failures.append((tag, url, detail))
+            failures.append((tag, version, url, detail))
 
     report = render_report(rows)
     print(report)
@@ -54,8 +61,8 @@ def main() -> int:
 
     if failures:
         print("One or more Oracle release URLs are unavailable:", file=sys.stderr)
-        for tag, url, detail in failures:
-            print(f"- {tag}: {url} ({detail})", file=sys.stderr)
+        for tag, version, url, detail in failures:
+            print(f"- {tag}: {version} {url} ({detail})", file=sys.stderr)
         return 1
     return 0
 
@@ -78,6 +85,36 @@ def list_releases(repository: str, token: str | None) -> list[dict]:
             return releases
         releases.extend(release for release in page_releases if not release.get("draft"))
         page += 1
+
+
+def fetch_release_metadata(release: dict, token: str | None) -> dict:
+    """Download and parse the SQLcl metadata JSON asset from a GitHub release."""
+
+    asset = find_metadata_asset(release)
+    headers = {"Accept": "application/octet-stream"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    with urllib.request.urlopen(request(asset["url"], headers=headers), timeout=60) as response:
+        metadata = json.loads(response.read().decode("utf-8"))
+
+    if not isinstance(metadata, dict):
+        raise ValueError(f"{asset['name']} did not contain a JSON object")
+    return metadata
+
+
+def find_metadata_asset(release: dict) -> dict:
+    """Return the release asset that contains the generated metadata JSON."""
+
+    metadata_assets = [
+        asset
+        for asset in release.get("assets", [])
+        if asset.get("name", "").endswith(".metadata.json")
+    ]
+    if len(metadata_assets) != 1:
+        tag = release.get("tag_name", "<unknown>")
+        raise RuntimeError(f"expected one metadata JSON asset for {tag}, found {len(metadata_assets)}")
+    return metadata_assets[0]
 
 
 def oracle_url_exists(url: str) -> tuple[bool, str]:
@@ -105,18 +142,19 @@ def oracle_url_exists(url: str) -> tuple[bool, str]:
         return False, str(error.reason)
 
 
-def render_report(rows: list[tuple[str, str, str, str]]) -> str:
+def render_report(rows: list[tuple[str, str, str, str, str]]) -> str:
     """Render health-check results as a Markdown table."""
 
     lines = [
         "# Oracle SQLcl URL health check",
         "",
-        "| Release | Status | Detail | Oracle URL |",
-        "| --- | --- | --- | --- |",
+        "| Release | Version | Status | Detail | Oracle URL |",
+        "| --- | --- | --- | --- | --- |",
     ]
-    for tag, url, status, detail in rows:
+    for tag, version, url, status, detail in rows:
         escaped_url = urllib.parse.quote(url, safe=":/.-_")
-        lines.append(f"| `{tag}` | {status} | {detail} | <{escaped_url}> |")
+        url_cell = f"<{escaped_url}>" if escaped_url else ""
+        lines.append(f"| `{tag}` | `{version}` | {status} | {detail} | {url_cell} |")
     return "\n".join(lines)
 
 
