@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Configure registry.yaml for a target GitHub owner/repository."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,6 +9,8 @@ import re
 
 
 def main() -> int:
+    """Rewrite the registry package owner and repository references."""
+
     parser = argparse.ArgumentParser(description="Set repo_owner and repo_name in registry.yaml.")
     parser.add_argument("--owner", required=True, help="GitHub owner or organization.")
     parser.add_argument("--repo", required=True, help="GitHub repository name.")

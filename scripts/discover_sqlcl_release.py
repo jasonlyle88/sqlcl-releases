@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Discover the SQLcl release on an Oracle page and generate release assets."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,6 +24,8 @@ from sqlcl_common import (
 
 
 def main() -> int:
+    """Run release discovery, archive verification, and asset generation."""
+
     parser = argparse.ArgumentParser(description="Discover and validate the current Oracle SQLcl release.")
     parser.add_argument("--output-dir", type=Path, default=Path("dist"), help="Directory for generated release assets.")
     parser.add_argument("--github-output", type=Path, help="Append version outputs for GitHub Actions.")

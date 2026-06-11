@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Shared helpers for discovering, validating, and publishing SQLcl metadata."""
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -35,6 +37,8 @@ ZIP_LINK_RE = re.compile(r"\d\.zip\b", re.IGNORECASE)
 
 @dataclass(frozen=True)
 class PublishedDownload:
+    """Metadata Oracle publishes on a SQLcl download page."""
+
     version: str
     url: str
     md5: str | None
@@ -45,6 +49,8 @@ class PublishedDownload:
 
 @dataclass(frozen=True)
 class ReleaseMetadata:
+    """Verified release data written to GitHub release assets."""
+
     version: str
     oracle_url: str
     oracle_release_asset_url: str
@@ -58,10 +64,14 @@ class ReleaseMetadata:
     oracle_published_sha256: str | None
 
     def to_json(self) -> str:
+        """Return this metadata in the stable JSON format used for artifacts."""
+
         return json.dumps(asdict(self), indent=2, sort_keys=True) + "\n"
 
 
 def request(url: str, method: str = "GET", headers: dict[str, str] | None = None) -> urllib.request.Request:
+    """Build a urllib request with the project User-Agent and optional headers."""
+
     request_headers = {"User-Agent": USER_AGENT}
     if headers:
         request_headers.update(headers)
@@ -69,11 +79,15 @@ def request(url: str, method: str = "GET", headers: dict[str, str] | None = None
 
 
 def fetch_text(url: str) -> str:
+    """Fetch a URL and decode the response as UTF-8 text."""
+
     with urllib.request.urlopen(request(url), timeout=60) as response:
         return response.read().decode("utf-8", errors="replace")
 
 
 def download_file(url: str, destination: Path) -> None:
+    """Download a URL to disk without loading the whole file into memory."""
+
     destination.parent.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(request(url), timeout=300) as response:
         with destination.open("wb") as output:
@@ -85,6 +99,8 @@ def download_file(url: str, destination: Path) -> None:
 
 
 def hash_file(path: Path, algorithm: str) -> str:
+    """Calculate a hexadecimal digest for a local file."""
+
     digest = hashlib.new(algorithm)
     with path.open("rb") as input_file:
         for chunk in iter(lambda: input_file.read(1024 * 1024), b""):
@@ -93,6 +109,8 @@ def hash_file(path: Path, algorithm: str) -> str:
 
 
 def parse_download_page(page_html: str, page_url: str) -> PublishedDownload:
+    """Extract SQLcl version, download URL, checksums, and release date from Oracle HTML."""
+
     soup = BeautifulSoup(page_html, "html.parser")
     page_text = _page_text(soup)
 
@@ -119,6 +137,8 @@ def parse_download_page(page_html: str, page_url: str) -> PublishedDownload:
 
 
 def extract_version_from_zip(zip_path: Path) -> str:
+    """Read a SQLcl zip archive and return the version it contains."""
+
     with zipfile.ZipFile(zip_path) as archive:
         try:
             # Modern SQLcl archives include the build version here.
@@ -144,6 +164,8 @@ def extract_version_from_zip(zip_path: Path) -> str:
 
 
 def verify_published_checksums(zip_path: Path, published: PublishedDownload, asset_url: str, page_url: str) -> ReleaseMetadata:
+    """Compare local archive hashes with Oracle-published hashes and return metadata."""
+
     # We always calculate all three hashes for release assets, even when Oracle
     # only publishes one or two of them for a historical version.
     md5 = hash_file(zip_path, "md5")
@@ -179,6 +201,8 @@ def verify_published_checksums(zip_path: Path, published: PublishedDownload, ass
 
 
 def write_checksum_files(output_dir: Path, metadata: ReleaseMetadata) -> list[Path]:
+    """Write per-algorithm and combined checksum files for a release."""
+
     output_dir.mkdir(parents=True, exist_ok=True)
     archive_name = f"sqlcl-{metadata.version}.zip"
     # Individual files are convenient for aqua checksum config; the combined
@@ -211,6 +235,8 @@ def write_checksum_files(output_dir: Path, metadata: ReleaseMetadata) -> list[Pa
 
 
 def write_release_notes(output_dir: Path, metadata: ReleaseMetadata) -> Path:
+    """Write the Markdown release notes used by gh release create."""
+
     path = output_dir / "release-notes.md"
     lines = [
         f"# SQLcl {metadata.version}",
@@ -243,6 +269,8 @@ def write_release_notes(output_dir: Path, metadata: ReleaseMetadata) -> Path:
 
 
 def write_metadata(output_dir: Path, metadata: ReleaseMetadata) -> Path:
+    """Write versioned and latest-style JSON metadata files."""
+
     path = output_dir / f"sqlcl-{metadata.version}.metadata.json"
     metadata_json = metadata.to_json()
     path.write_text(metadata_json, encoding="utf-8")
@@ -252,6 +280,8 @@ def write_metadata(output_dir: Path, metadata: ReleaseMetadata) -> Path:
 
 
 def write_env_file(output_dir: Path, metadata: ReleaseMetadata) -> Path:
+    """Write a shell-friendly env file for local inspection/debugging."""
+
     path = output_dir / "release.env"
     path.write_text(
         "\n".join(
@@ -270,6 +300,8 @@ def write_env_file(output_dir: Path, metadata: ReleaseMetadata) -> Path:
 
 
 def append_github_output(path: Path, pairs: Iterable[tuple[str, str]]) -> None:
+    """Append key/value pairs to the file GitHub Actions uses for step outputs."""
+
     with path.open("a", encoding="utf-8") as output:
         for key, value in pairs:
             output.write(f"{key}={value}\n")

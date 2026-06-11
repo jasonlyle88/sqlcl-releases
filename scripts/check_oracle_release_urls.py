@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Verify that Oracle still serves the SQLcl URLs for indexed GitHub releases."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,6 +16,8 @@ from sqlcl_common import USER_AGENT, VERSION_URL_TEMPLATE, request
 
 
 def main() -> int:
+    """Check every non-draft GitHub release tag against Oracle's download URL."""
+
     parser = argparse.ArgumentParser(description="Check whether Oracle still serves each indexed SQLcl release.")
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY"), help="GitHub repository slug.")
     parser.add_argument("--github-token", default=os.environ.get("GITHUB_TOKEN"), help="GitHub token.")
@@ -57,6 +61,8 @@ def main() -> int:
 
 
 def list_releases(repository: str, token: str | None) -> list[dict]:
+    """Return all non-draft releases for a GitHub repository."""
+
     releases = []
     page = 1
     while True:
@@ -75,6 +81,8 @@ def list_releases(repository: str, token: str | None) -> list[dict]:
 
 
 def oracle_url_exists(url: str) -> tuple[bool, str]:
+    """Check whether an Oracle archive URL is available without downloading it."""
+
     try:
         # HEAD is cheap and normally enough for Oracle's static downloads.
         with urllib.request.urlopen(request(url, method="HEAD"), timeout=30) as response:
@@ -98,6 +106,8 @@ def oracle_url_exists(url: str) -> tuple[bool, str]:
 
 
 def render_report(rows: list[tuple[str, str, str, str]]) -> str:
+    """Render health-check results as a Markdown table."""
+
     lines = [
         "# Oracle SQLcl URL health check",
         "",

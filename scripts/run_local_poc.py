@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Run a local mise/aqua proof of concept against generated SQLcl metadata."""
+
 from __future__ import annotations
 
 from functools import partial
@@ -13,6 +15,8 @@ import threading
 
 
 def main() -> int:
+    """Serve local checksum metadata and ask mise to install SQLcl through aqua."""
+
     parser = argparse.ArgumentParser(description="Run an isolated local mise/aqua SQLcl proof of concept.")
     parser.add_argument("--metadata", type=Path, default=Path("dist/metadata.json"))
     parser.add_argument("--work-dir", type=Path, default=Path("work/local-poc"))
@@ -91,6 +95,8 @@ packages:
 
 
 def resolve_metadata_path(path: Path) -> Path:
+    """Find the requested metadata file, falling back to the latest versioned file."""
+
     if path.exists():
         return path
     candidates = sorted(path.parent.glob("sqlcl-*.metadata.json"))
