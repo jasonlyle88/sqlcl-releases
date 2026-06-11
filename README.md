@@ -2,9 +2,9 @@
 
 This repository is a metadata-only release registry for Oracle SQLcl.
 
-It is inteded for use with the [aqua CLI Version Manager](https://aquaproj.github.io/)/[mise](https://mise.jdx.dev/), but can be used for any discovery purpose.
+It is intended for use with the [aqua CLI Version Manager](https://aquaproj.github.io/)/[mise](https://mise.jdx.dev/), but can be used for any discovery purpose.
 
-It does not mirror or redistribute Oracle SQLcl zip archives. Installs via aqual/mise still download SQLcl directly from Oracle:
+It does not mirror or redistribute Oracle SQLcl zip archives. Installs via aqua/mise still download SQLcl directly from Oracle:
 
 ```text
 https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-{{.Version}}.zip
@@ -21,6 +21,14 @@ This repo keeps those concerns separate:
 - GitHub releases in this repo provide version discovery.
 - Checksum-only release assets provide aqua/mise checksum verification.
 - SQLcl itself is downloaded from Oracle, not from this repo.
+
+## Local development
+
+Install the Python dependencies before running the helper scripts locally:
+
+```sh
+python3 -m pip install -r requirements.txt
+```
 
 ## Health checks
 

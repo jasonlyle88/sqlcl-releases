@@ -5,7 +5,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 import hashlib
-import html
 import json
 import re
 import urllib.error
@@ -13,11 +12,21 @@ import urllib.request
 import urllib.parse
 import zipfile
 
+from bs4 import BeautifulSoup
+from dateparser.search import search_dates
+
 LATEST_URL = "https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-latest.zip"
 DOWNLOAD_PAGE_URL = "https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/download/"
 VERSION_URL_TEMPLATE = "https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-{version}.zip"
 # Oracle pages are more likely to serve full HTML reliably with a descriptive user agent.
 USER_AGENT = "sqlcl-aqua-registry/1.0 (+https://github.com/jlyle/sqlcl-aqua-registry)"
+DATE_SEARCH_SETTINGS = {
+    "PARSERS": ["absolute-time"],
+    "REQUIRE_PARTS": ["year", "month", "day"],
+    "STRICT_PARSING": True,
+}
+VERSION_RE = re.compile(r"\b(?:\d+\.){4}\d+\b")
+DOWNLOAD_VERSION_RE = re.compile(r"sqlcl-(\d+(?:\.\d+)+)\.zip$")
 
 
 @dataclass(frozen=True)
@@ -80,47 +89,25 @@ def hash_file(path: Path, algorithm: str) -> str:
 
 
 def parse_download_page(page_html: str, expected_url: str | None = None) -> PublishedDownload:
-    normalized = html.unescape(page_html)
+    soup = BeautifulSoup(page_html, "html.parser")
+    page_text = _page_text(soup)
+
     # Backfill pages can contain several Oracle download links. The requested
     # download URL lets us ignore unrelated "latest" or previous-version links.
     expected_version = _version_from_download_url(expected_url) if expected_url else None
+    url = _download_url_from_page(soup, expected_version)
+    version = expected_version or _version_from_download_url(url) or _first_group(VERSION_RE, page_text)
+    md5, sha1, sha256 = _checksums_from_text(page_text)
 
-    for match in _download_link_matches(normalized):
-        url = _normalize_oracle_url(match.group("url"))
-        version = match.group("version")
-        if expected_version and version != expected_version:
-            continue
-
-        # Checksums usually live in the same table row or nearby details block,
-        # but Oracle has changed the page template several times. A surrounding
-        # window handles both the table layout and older single-line HTML.
-        chunk = normalized[max(0, match.start() - 2500) : match.end() + 2500]
-        md5, sha1, sha256 = _checksums_from_chunk(chunk)
-        release_date = _release_date_from_chunk(chunk)
-        if md5 or sha1 or sha256:
-            return PublishedDownload(
-                version=version,
-                url=url,
-                md5=md5.lower() if md5 else None,
-                sha1=sha1.lower() if sha1 else None,
-                sha256=sha256.lower() if sha256 else None,
-                release_date=release_date,
-            )
-
-    if expected_url and expected_version:
-        # Some archived pages do not expose a clean versioned href near the
-        # checksum block. In that case, trust the caller-provided URL for the
-        # version and still require at least one checksum from the page.
-        md5, sha1, sha256 = _checksums_from_chunk(normalized)
-        if md5 or sha1 or sha256:
-            return PublishedDownload(
-                version=expected_version,
-                url=_normalize_oracle_url(expected_url),
-                md5=md5.lower() if md5 else None,
-                sha1=sha1.lower() if sha1 else None,
-                sha256=sha256.lower() if sha256 else None,
-                release_date=_release_date_from_chunk(normalized),
-            )
+    if version and (url or expected_url) and (md5 or sha1 or sha256):
+        return PublishedDownload(
+            version=version,
+            url=url or _normalize_oracle_url(expected_url),
+            md5=md5,
+            sha1=sha1,
+            sha256=sha256,
+            release_date=_release_date_from_text(page_text),
+        )
 
     raise RuntimeError("Could not find a SQLcl download row with published checksums on Oracle's page")
 
@@ -282,12 +269,17 @@ def append_github_output(path: Path, pairs: Iterable[tuple[str, str]]) -> None:
             output.write(f"{key}={value}\n")
 
 
-def _first_group(pattern: str, text: str, flags: int = 0) -> str | None:
-    match = re.search(pattern, text, flags)
+def _first_group(pattern: str | re.Pattern[str], text: str, flags: int = 0) -> str | None:
+    match = re.search(pattern, text, flags) if isinstance(pattern, str) else pattern.search(text)
     return match.group(1) if match else None
 
 
-def _checksums_from_chunk(chunk: str) -> tuple[str | None, str | None, str | None]:
+def _page_text(soup: BeautifulSoup) -> str:
+    source = soup.body or soup
+    return source.get_text(separator=" ", strip=True)
+
+
+def _checksums_from_text(text: str) -> tuple[str | None, str | None, str | None]:
     md5 = sha1 = sha256 = None
     # Archived Oracle pages have a few label inconsistencies, including
     # "SHA1: md<hash>" and a 40-character digest labeled as SHA256. Classifying
@@ -296,7 +288,7 @@ def _checksums_from_chunk(chunk: str) -> tuple[str | None, str | None, str | Non
         r"\b(?:MD5|SHA[-\s]?(?:1|256))\s*:?\s*(?:md)?([A-Fa-f0-9]{32,64})",
         re.IGNORECASE,
     )
-    for match in checksum_re.finditer(chunk):
+    for match in checksum_re.finditer(text):
         checksum = match.group(1).lower()
         if len(checksum) == 32:
             md5 = checksum
@@ -307,14 +299,17 @@ def _checksums_from_chunk(chunk: str) -> tuple[str | None, str | None, str | Non
     return md5, sha1, sha256
 
 
-def _download_link_matches(page_html: str) -> Iterable[re.Match[str]]:
+def _download_url_from_page(soup: BeautifulSoup, expected_version: str | None) -> str | None:
     # Older pages may use protocol-relative hrefs with whitespace, e.g.
     # href=' //download.oracle.com/.../sqlcl-21.1.1.113.1704.zip'.
-    link_re = re.compile(
-        r"""href\s*=\s*["']\s*(?P<url>(?:https?:)?\s*//download\.oracle\.com/[^"']*?/sqlcl-(?P<version>\d+(?:\.\d+)+)\.zip)\s*["']""",
-        re.IGNORECASE,
-    )
-    return link_re.finditer(page_html)
+    for link in soup.find_all("a", href=True):
+        url = _normalize_oracle_url(link["href"])
+        version = _version_from_download_url(url)
+        if not version:
+            continue
+        if not expected_version or version == expected_version:
+            return url
+    return None
 
 
 def _normalize_oracle_url(url: str) -> str:
@@ -334,21 +329,16 @@ def _version_from_download_url(url: str | None) -> str | None:
     # still discover the version from the page/archive in that case.
     normalized = _normalize_oracle_url(url)
     parsed = urllib.parse.urlparse(normalized)
-    match = re.search(r"sqlcl-(\d+(?:\.\d+)+)\.zip$", parsed.path)
+    if parsed.netloc and parsed.netloc != "download.oracle.com":
+        return None
+    match = DOWNLOAD_VERSION_RE.search(parsed.path)
     return match.group(1) if match else None
 
 
-def _release_date_from_chunk(chunk: str) -> str | None:
-    release_date = _first_group(r"Release Date:\s*([0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4})", chunk)
-    if release_date:
-        return release_date.strip()
-
-    # Older pages render release dates as "Version x.y.z - Month D, YYYY".
-    version_date = _first_group(
-        r"Version\s+\d+(?:\.\d+)+\s*-\s*([^<\n\r]+)",
-        chunk,
-        flags=re.IGNORECASE,
-    )
-    if version_date:
-        return re.sub(r"\s+", " ", version_date).strip()
+def _release_date_from_text(text: str) -> str | None:
+    # dateparser handles the current numeric date format and older
+    # "Month D, YYYY" release text without locking us to either template.
+    dates = search_dates(text, settings=DATE_SEARCH_SETTINGS)
+    if dates:
+        return re.sub(r"\s+", " ", dates[0][0]).strip()
     return None
