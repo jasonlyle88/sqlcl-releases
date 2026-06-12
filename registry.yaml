@@ -13,10 +13,7 @@ packages:
       - name: sql
         src: sqlcl/bin/sql
     checksum:
-      type: http
-      url: https://github.com/jasonlyle88/sqlcl-releases/releases/download/v{{.SemVer}}/sqlcl-{{.SemVer}}.zip.sha256
+      type: github_release
+      asset: sqlcl-{{.SemVer}}.zip.sha256
+      file_format: raw
       algorithm: sha256
-      file_format: regexp
-      pattern:
-        checksum: ^(\b[A-Fa-f0-9]{64}\b)
-        file: "^\\b[A-Fa-f0-9]{64}\\b\\s+(\\S+)$"
