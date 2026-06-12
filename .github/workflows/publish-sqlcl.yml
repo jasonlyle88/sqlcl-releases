@@ -34,11 +34,13 @@ jobs:
 
       - name: Discover current SQLcl release
         id: discover
+        env:
+          RELEASE_PAGE: ${{ inputs.release-page }}
         run: |
           python3 scripts/discover_sqlcl_release.py \
             --output-dir dist \
             --github-output "$GITHUB_OUTPUT" \
-            --release-page "${{ inputs.release-page }}"
+            --release-page "${RELEASE_PAGE:-"https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/download/"}"
 
       - name: Check for existing release
         id: existing
