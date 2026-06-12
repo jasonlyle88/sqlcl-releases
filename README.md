@@ -32,11 +32,7 @@ python3 -m pip install -r requirements.txt
 
 ## Health checks
 
-The `Health Check Oracle URLs` workflow lists this repository's releases and verifies that Oracle still serves:
-
-```text
-https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-{{VERSION}}.zip
-```
+The `Health Check Oracle URLs` workflow lists this repository's releases, reads each release's metadata JSON asset, and verifies that Oracle still serves the recorded `oracle_release_asset_url`.
 
 The workflow is intentionally non-destructive. If Oracle removes a historical download, the workflow fails and reports the affected version. It does not delete releases, because deleting version metadata makes installs less predictable and erases useful checksum history.
 
