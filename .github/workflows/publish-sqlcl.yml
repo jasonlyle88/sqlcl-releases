@@ -48,7 +48,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.discover.outputs.version }}
         run: |
-          if gh release view "v$VERSION" >/dev/null 2>&1; then
+          if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -60,7 +60,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.discover.outputs.version }}
         run: |
-          gh release create "v$VERSION" \
+          gh release create "$VERSION" \
             "dist/sqlcl-$VERSION.zip.md5" \
             "dist/sqlcl-$VERSION.zip.sha1" \
             "dist/sqlcl-$VERSION.zip.sha256" \
