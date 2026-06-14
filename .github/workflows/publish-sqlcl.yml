@@ -79,6 +79,6 @@ jobs:
         if: steps.existing.outputs.exists == 'true'
         env:
           VERSION: ${{ steps.discover.outputs.version }}
-          MESSAGE: "SQLcl ${VERSION} already exists"
         run: |
+          MESSAGE="SQLcl $VERSION already exists"
           echo "${MESSAGE}" | tee "$GITHUB_STEP_SUMMARY"
