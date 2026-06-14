@@ -73,7 +73,7 @@ jobs:
             "dist/sqlcl-$VERSION.metadata.json" \
             --title "SQLcl $VERSION" \
             --notes-file dist/release-notes.md
-          cat "$GITHUB_OUTPUT/release-notes.md" > "$GITHUB_STEP_SUMMARY"
+          cat dist/release-notes.md > "$GITHUB_STEP_SUMMARY"
 
       - name: Report existing release
         if: steps.existing.outputs.exists == 'true'
