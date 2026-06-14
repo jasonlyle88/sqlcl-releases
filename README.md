@@ -39,6 +39,18 @@ uv run scripts/check_oracle_release_urls.py --help
 uv run scripts/check_oracle_release_urls.py --repository "$(gh repo view --json nameWithOwner -q .nameWithOwner)" --github-token "$(gh auth token)"
 ```
 
+Run the local quality checks before opening a pull request:
+
+```sh
+uv sync --all-groups
+uv run ruff format --check scripts tests
+uv run ruff check scripts tests
+uv run pytest
+```
+
+The pytest suite is intentionally local-only by default. Tests that call Oracle or GitHub should be marked
+`@pytest.mark.network` so they can be run explicitly when needed.
+
 ## Health checks
 
 The `Health Check Oracle URLs` workflow lists this repository's releases, reads each release's metadata JSON asset, and verifies that Oracle still serves the recorded `oracle_release_asset_url`.

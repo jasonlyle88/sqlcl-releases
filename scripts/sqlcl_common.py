@@ -3,16 +3,16 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Iterable
 import hashlib
 import json
 import re
 import urllib.error
-import urllib.request
 import urllib.parse
+import urllib.request
 import zipfile
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 from bs4 import BeautifulSoup
 from dateparser.search import search_dates
@@ -89,13 +89,12 @@ def download_file(url: str, destination: Path) -> None:
     """Download a URL to disk without loading the whole file into memory."""
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(request(url), timeout=300) as response:
-        with destination.open("wb") as output:
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                output.write(chunk)
+    with urllib.request.urlopen(request(url), timeout=300) as response, destination.open("wb") as output:
+        while True:
+            chunk = response.read(1024 * 1024)
+            if not chunk:
+                break
+            output.write(chunk)
 
 
 def hash_file(path: Path, algorithm: str) -> str:
@@ -163,7 +162,9 @@ def extract_version_from_zip(zip_path: Path) -> str:
     raise RuntimeError(f"Could not determine SQLcl version from {zip_path}")
 
 
-def verify_published_checksums(zip_path: Path, published: PublishedDownload, asset_url: str, page_url: str) -> ReleaseMetadata:
+def verify_published_checksums(
+    zip_path: Path, published: PublishedDownload, asset_url: str, page_url: str
+) -> ReleaseMetadata:
     """Compare local archive hashes with Oracle-published hashes and return metadata."""
 
     # We always calculate all three hashes for release assets, even when Oracle

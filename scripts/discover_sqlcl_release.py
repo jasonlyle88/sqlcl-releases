@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import argparse
 import sys
 import tempfile
+from pathlib import Path
 
 from sqlcl_common import (
     DOWNLOAD_PAGE_URL,
@@ -29,7 +29,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Discover and validate the current Oracle SQLcl release.")
     parser.add_argument("--output-dir", type=Path, default=Path("dist"), help="Directory for generated release assets.")
     parser.add_argument("--github-output", type=Path, help="Append version outputs for GitHub Actions.")
-    parser.add_argument("--release-page", type=str, default=DOWNLOAD_PAGE_URL, help="URL to SQLcl version release page.")
+    parser.add_argument(
+        "--release-page", type=str, default=DOWNLOAD_PAGE_URL, help="URL to SQLcl version release page."
+    )
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -50,7 +52,7 @@ def main() -> int:
         # The archive is the source of truth for the installed version. The page
         # must agree before we trust its checksums.
         # Some archive versions contain the short version, so check against that as well
-        if archive_version != published.version and not published.version.startswith(archive_version + '.'):
+        if archive_version != published.version and not published.version.startswith(archive_version + "."):
             raise RuntimeError(
                 "Downloaded archive version does not match Oracle download page: "
                 f"archive={archive_version}, page={published.version}"
@@ -71,7 +73,7 @@ def main() -> int:
                     ("oracle_url", metadata.oracle_url),
                     ("md5", metadata.md5),
                     ("sha1", metadata.sha1),
-                    ("sha256", metadata.sha256)
+                    ("sha256", metadata.sha256),
                 ],
             )
 

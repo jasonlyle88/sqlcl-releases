@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import argparse
 import json
 import os
@@ -11,6 +10,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 from sqlcl_common import USER_AGENT, request
 
@@ -106,11 +106,7 @@ def fetch_release_metadata(release: dict, token: str | None) -> dict:
 def find_metadata_asset(release: dict) -> dict:
     """Return the release asset that contains the generated metadata JSON."""
 
-    metadata_assets = [
-        asset
-        for asset in release.get("assets", [])
-        if asset.get("name", "").endswith(".metadata.json")
-    ]
+    metadata_assets = [asset for asset in release.get("assets", []) if asset.get("name", "").endswith(".metadata.json")]
     if len(metadata_assets) != 1:
         tag = release.get("tag_name", "<unknown>")
         raise RuntimeError(f"expected one metadata JSON asset for {tag}, found {len(metadata_assets)}")

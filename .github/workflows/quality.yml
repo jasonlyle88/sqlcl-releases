@@ -1,0 +1,45 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Check formatting
+        run: uv run --locked ruff format --check scripts tests
+
+      - name: Lint
+        run: uv run --locked ruff check scripts tests
+
+      - name: Test
+        run: uv run --locked pytest
+
+      - name: Check CLI help
+        run: |
+          uv run --locked scripts/discover_sqlcl_release.py --help
+          uv run --locked scripts/check_oracle_release_urls.py --help
