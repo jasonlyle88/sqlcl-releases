@@ -24,10 +24,19 @@ This repo keeps those concerns separate:
 
 ## Local development
 
-Install the Python dependencies before running the helper scripts locally:
+Install the locked Python environment before running the helper scripts locally:
 
 ```sh
-python3 -m pip install -r requirements.txt
+uv sync
+```
+
+Run helper scripts through uv so they use the project environment:
+
+```sh
+uv run scripts/discover_sqlcl_release.py --help
+uv run scripts/discover_sqlcl_release.py --output-dir dist --github-output temp/sqlcl-23.2.0.178.1027.$(date +%s)
+uv run scripts/check_oracle_release_urls.py --help
+uv run scripts/check_oracle_release_urls.py --repository "$(gh repo view --json nameWithOwner -q .nameWithOwner)" --github-token "$(gh auth token)"
 ```
 
 ## Health checks

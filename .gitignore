@@ -1,3 +1,5 @@
 dist/
+temp/
+.venv/
 __pycache__/
 *.pyc

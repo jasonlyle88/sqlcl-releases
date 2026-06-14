@@ -1,0 +1,10 @@
+[project]
+name = "sqlcl-releases"
+version = "1.0.0"
+description = "Metadata-only release registry automation for Oracle SQLcl."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "beautifulsoup4",
+    "dateparser",
+]

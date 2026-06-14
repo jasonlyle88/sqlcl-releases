@@ -29,15 +29,20 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+
       - name: Install Python dependencies
-        run: python3 -m pip install -r requirements.txt
+        run: uv sync --locked
 
       - name: Discover current SQLcl release
         id: discover
         env:
           RELEASE_PAGE: ${{ inputs.release-page }}
         run: |
-          python3 scripts/discover_sqlcl_release.py \
+          uv run --locked scripts/discover_sqlcl_release.py \
             --output-dir dist \
             --github-output "$GITHUB_OUTPUT" \
             --release-page "${RELEASE_PAGE:-"https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/download/"}"
