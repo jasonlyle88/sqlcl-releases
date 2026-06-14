@@ -73,7 +73,12 @@ jobs:
             "dist/sqlcl-$VERSION.metadata.json" \
             --title "SQLcl $VERSION" \
             --notes-file dist/release-notes.md
+          cat "$GITHUB_OUTPUT/release-notes.md" > "$GITHUB_STEP_SUMMARY"
 
       - name: Report existing release
         if: steps.existing.outputs.exists == 'true'
-        run: echo "SQLcl ${{ steps.discover.outputs.version }} already exists."
+        env:
+          VERSION: ${{ steps.discover.outputs.version }}
+          MESSAGE: "SQLcl ${VERSION} already exists"
+        run: |
+          echo "${MESSAGE}" | tee "$GITHUB_STEP_SUMMARY"
