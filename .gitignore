@@ -1,5 +1,7 @@
-dist/
-temp/
+dist/*
+temp/*
 .venv/
 __pycache__/
 *.pyc
+
+!.gitkeep
