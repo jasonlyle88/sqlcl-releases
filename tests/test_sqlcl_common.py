@@ -1,3 +1,9 @@
+"""Unit tests for the SQLcl release parsing and artifact helpers.
+
+These tests stay local-only: they model Oracle pages, SQLcl archives, and
+published release metadata with small fixtures instead of touching the network.
+"""
+
 from __future__ import annotations
 
 import json
@@ -19,6 +25,8 @@ from sqlcl_common import (
 
 
 def metadata() -> ReleaseMetadata:
+    """Return a complete release metadata fixture for artifact writer tests."""
+
     return ReleaseMetadata(
         version="26.1.2.132.1334",
         oracle_url="https://download.oracle.com/otn_software/java/sqldeveloper/sqlcl-26.1.2.132.1334.zip",
@@ -35,6 +43,10 @@ def metadata() -> ReleaseMetadata:
 
 
 def test_parse_download_page_extracts_release_metadata() -> None:
+    """Extract version, URL, checksums, and release date from Oracle-like HTML."""
+
+    # Keep this fixture intentionally small while preserving the page features
+    # the parser depends on: visible text, a zip link, and published checksums.
     page = """
     <html>
       <body>
@@ -60,6 +72,8 @@ def test_parse_download_page_extracts_release_metadata() -> None:
 
 
 def test_parse_download_page_falls_back_to_versioned_url() -> None:
+    """Build the canonical Oracle URL when a page has metadata but no zip link."""
+
     page = "<html><body><p>SQLcl 26.1.2.132.1334</p><p>MD5: 5d41402abc4b2a76b9719d911017c592</p></body></html>"
 
     published = parse_download_page(page, page_url="https://www.oracle.com/sqlcl/download/")
@@ -68,13 +82,18 @@ def test_parse_download_page_falls_back_to_versioned_url() -> None:
 
 
 def test_parse_download_page_requires_version() -> None:
+    """Fail loudly when Oracle page text does not include a SQLcl version."""
+
     with pytest.raises(RuntimeError, match="Could not find a SQLcl version"):
         parse_download_page("<html><body>No version here</body></html>", page_url="https://www.oracle.com/sqlcl/")
 
 
 def test_extract_version_from_zip_prefers_version_file(tmp_path) -> None:
+    """Use the explicit SQLcl version file before archive marker filenames."""
+
     zip_path = tmp_path / "sqlcl.zip"
     with zipfile.ZipFile(zip_path, "w") as archive:
+        # The marker file disagrees on purpose; version.txt is the stronger signal.
         archive.writestr("sqlcl/bin/version.txt", "RELEASE=26.1.2.132.1334\n")
         archive.writestr("sqlcl/99.9.9.9.9", "")
 
@@ -82,6 +101,8 @@ def test_extract_version_from_zip_prefers_version_file(tmp_path) -> None:
 
 
 def test_extract_version_from_zip_uses_unambiguous_marker_file(tmp_path) -> None:
+    """Fall back to the single version marker used by older/current archives."""
+
     zip_path = tmp_path / "sqlcl.zip"
     with zipfile.ZipFile(zip_path, "w") as archive:
         archive.writestr("sqlcl/26.1.2.132.1334", "")
@@ -90,6 +111,8 @@ def test_extract_version_from_zip_uses_unambiguous_marker_file(tmp_path) -> None
 
 
 def test_extract_version_from_zip_rejects_ambiguous_marker_files(tmp_path) -> None:
+    """Reject marker-file fallback when multiple candidate versions are present."""
+
     zip_path = tmp_path / "sqlcl.zip"
     with zipfile.ZipFile(zip_path, "w") as archive:
         archive.writestr("sqlcl/26.1.2.132.1334", "")
@@ -100,7 +123,10 @@ def test_extract_version_from_zip_rejects_ambiguous_marker_files(tmp_path) -> No
 
 
 def test_verify_published_checksums_returns_release_metadata(tmp_path) -> None:
+    """Return verified metadata when all published checksums match the archive."""
+
     zip_path = tmp_path / "sqlcl.zip"
+    # The known hashes below are for this exact byte string.
     zip_path.write_bytes(b"hello")
     published = PublishedDownload(
         version="26.1.2.132.1334",
@@ -125,6 +151,8 @@ def test_verify_published_checksums_returns_release_metadata(tmp_path) -> None:
 
 
 def test_verify_published_checksums_reports_mismatch(tmp_path) -> None:
+    """Report checksum mismatches instead of producing release metadata."""
+
     zip_path = tmp_path / "sqlcl.zip"
     zip_path.write_bytes(b"hello")
     published = PublishedDownload(
@@ -141,6 +169,8 @@ def test_verify_published_checksums_reports_mismatch(tmp_path) -> None:
 
 
 def test_verify_published_checksums_requires_published_checksum(tmp_path) -> None:
+    """Require at least one Oracle-published checksum before trusting a release."""
+
     zip_path = tmp_path / "sqlcl.zip"
     zip_path.write_bytes(b"hello")
     published = PublishedDownload(
@@ -157,6 +187,8 @@ def test_verify_published_checksums_requires_published_checksum(tmp_path) -> Non
 
 
 def test_write_release_artifacts(tmp_path) -> None:
+    """Write checksum, notes, JSON metadata, and env artifacts consistently."""
+
     release_metadata = metadata()
 
     checksum_files = write_checksum_files(tmp_path, release_metadata)
